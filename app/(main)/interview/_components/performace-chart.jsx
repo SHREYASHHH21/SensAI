@@ -1,4 +1,4 @@
-"use client";
+ "use client";
 
 import {
   LineChart,
@@ -67,7 +67,7 @@ export default function PerformanceChart({ assessments }) {
               <Line
                 type="monotone"
                 dataKey="score"
-                stroke="hsl(var(--primary))"
+                stroke="#39FF14"
                 strokeWidth={2}
               />
             </LineChart>
