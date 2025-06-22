@@ -23,13 +23,13 @@ import useFetch from "@/hooks/use-fetch";
 import { useUser } from "@clerk/nextjs";
 import { entriesToMarkdown } from "@/app/lib/helper";
 import { resumeSchema } from "@/app/lib/schema";
-import html2pdf from "html2pdf.js/dist/html2pdf.min.js";
 
 export default function ResumeBuilder({ initialContent }) {
   const [activeTab, setActiveTab] = useState("edit");
   const [previewContent, setPreviewContent] = useState(initialContent);
   const { user } = useUser();
   const [resumeMode, setResumeMode] = useState("preview");
+  const [isDarkMode, setIsDarkMode] = useState(false); // State to track dark mode
 
   const {
     control,
@@ -69,7 +69,7 @@ export default function ResumeBuilder({ initialContent }) {
       const newContent = getCombinedContent();
       setPreviewContent(newContent ? newContent : initialContent);
     }
-  }, [formValues, activeTab]);
+  }, [formValues, activeTab, initialContent]); // Added initialContent to dependencies
 
   // Handle save result
   useEffect(() => {
@@ -80,6 +80,28 @@ export default function ResumeBuilder({ initialContent }) {
       toast.error(saveError.message || "Failed to save resume");
     }
   }, [saveResult, saveError, isSaving]);
+
+  // Detect dark mode from the document's class
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const checkDarkMode = () => {
+        // This assumes your dark mode is controlled by a 'dark' class on the <html> element
+        setIsDarkMode(document.documentElement.classList.contains('dark'));
+      };
+
+      // Initial check
+      checkDarkMode();
+
+      // Observe changes if your theme toggler modifies the class
+      const observer = new MutationObserver(checkDarkMode);
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class'],
+      });
+
+      return () => observer.disconnect();
+    }
+  }, []);
 
   const getContactMarkdown = () => {
     const { contactInfo } = formValues;
@@ -92,7 +114,7 @@ export default function ResumeBuilder({ initialContent }) {
 
     return parts.length > 0
       ? `## <div align="center">${user.fullName}</div>
-        \n\n<div align="center">\n\n${parts.join(" | ")}\n\n</div>`
+          \n\n<div align="center">\n\n${parts.join(" | ")}\n\n</div>`
       : "";
   };
 
@@ -115,7 +137,17 @@ export default function ResumeBuilder({ initialContent }) {
   const generatePDF = async () => {
     setIsGenerating(true);
     try {
+      if (typeof window === "undefined" || typeof document === "undefined") return;
+
+      // Ensure html2pdf.js is loaded
+      const { default: html2pdf } = await import("html2pdf.js");
+
       const element = document.getElementById("resume-pdf");
+      if (!element) {
+        console.warn("Element with ID 'resume-pdf' not found for PDF generation.");
+        return;
+      }
+
       const opt = {
         margin: [15, 15],
         filename: "resume.pdf",
@@ -127,6 +159,7 @@ export default function ResumeBuilder({ initialContent }) {
       await html2pdf().set(opt).from(element).save();
     } catch (error) {
       console.error("PDF generation error:", error);
+      toast.error("Failed to generate PDF. Please check console for details.");
     } finally {
       setIsGenerating(false);
     }
@@ -147,7 +180,8 @@ export default function ResumeBuilder({ initialContent }) {
   };
 
   return (
-    <div data-color-mode="light" className="space-y-4">
+    // Dynamically set data-color-mode based on isDarkMode state
+    <div data-color-mode={isDarkMode ? "dark" : "light"} className="space-y-4">
       <div className="flex flex-col md:flex-row justify-between items-center gap-2">
         <h1 className="font-bold gradient-title text-5xl md:text-6xl">
           Resume Builder
@@ -389,7 +423,7 @@ export default function ResumeBuilder({ initialContent }) {
             <div className="flex p-3 gap-2 items-center border-2 border-yellow-600 text-yellow-600 rounded mb-2">
               <AlertTriangle className="h-5 w-5" />
               <span className="text-sm">
-                You will lose editied markdown if you update the form data.
+                You will lose edited markdown if you update the form data.
               </span>
             </div>
           )}
@@ -399,12 +433,15 @@ export default function ResumeBuilder({ initialContent }) {
               onChange={setPreviewContent}
               height={800}
               preview={resumeMode}
+              // MDEditor automatically picks up data-color-mode from parent
+              // No need for separate style or data-color-mode here
             />
           </div>
           <div className="hidden">
             <div id="resume-pdf">
               <MDEditor.Markdown
                 source={previewContent}
+                // Keep these styles for the PDF output
                 style={{
                   background: "white",
                   color: "black",
